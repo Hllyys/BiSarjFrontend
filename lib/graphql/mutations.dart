@@ -39,3 +39,17 @@ mutation CreateUser(
   }
 }
 ''';
+
+const String forgotPasswordMutation = r'''
+mutation ForgotPassword(
+  $email: String!,
+  $expiration: Int,
+  $disableEmail: Boolean
+) {
+  forgotPasswordUser(
+    email: $email,
+    expiration: $expiration,
+    disableEmail: $disableEmail
+  )
+}
+''';
