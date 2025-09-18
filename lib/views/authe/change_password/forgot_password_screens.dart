@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:frontend_bisarj/components/app_button.dart';
+import 'package:frontend_bisarj/graphql/mutations.dart';
 import 'package:frontend_bisarj/utils/app_colors.dart';
 import 'package:frontend_bisarj/utils/app_commons.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
 
 class ForgotPasswordScreens extends StatefulWidget {
   const ForgotPasswordScreens({super.key});
@@ -13,14 +15,79 @@ class ForgotPasswordScreens extends StatefulWidget {
 class _ForgotPasswordScreensState extends State<ForgotPasswordScreens> {
   TextEditingController emailController = TextEditingController();
   TextEditingController oldPasswordController = TextEditingController();
+  bool isLoading = false;
 
   @override
+  void dispose() {
+    emailController.dispose();
+    super.dispose();
+  }
+
+  String? _emailValidator(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Email required';
+    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim());
+    if (!ok) return 'Geçerli bir email giriniz';
+    return null;
+  }
+
+  Future<void> runForgotPassword() async {
+    final err = _emailValidator(emailController.text);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+    setState(() {
+      isLoading = true;
+    });
+    try {
+      final client = GraphQLProvider.of(context).value;
+      final result = await client.mutate(
+        MutationOptions(
+          document: gql(forgotPasswordMutation),
+          variables: {
+            'email': emailController.text.trim(),
+            'expiration': 15,
+            'disableEmail': true,
+          },
+        ),
+      );
+
+      setState(() => isLoading = false);
+
+      if (result.hasException) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result.exception.toString())));
+        return;
+      }
+
+      final ok = result.data?['forgotPasswordUser'] as bool?;
+      if (ok == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Password reset link sent.')),
+        );
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Operation failed.')));
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: backButton(context, onTap: () {
-          Navigator.pop(context);
-        }),
+        leading: backButton(
+          context,
+          onTap: () {
+            Navigator.pop(context);
+          },
+        ),
       ),
       resizeToAvoidBottomInset: true,
       body: Padding(
@@ -56,10 +123,8 @@ class _ForgotPasswordScreensState extends State<ForgotPasswordScreens> {
               SizedBox(height: 30),
               AppButton(
                 text: 'Send Code',
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-              )
+                onPressed: isLoading ? null : runForgotPassword,
+              ),
             ],
           ),
         ),
