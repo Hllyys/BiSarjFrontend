@@ -67,35 +67,44 @@
 // }
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:frontend_bisarj/utils/app.constants.dart';
 import 'package:frontend_bisarj/utils/app_colors.dart';
 import 'package:frontend_bisarj/views/splash_screen.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:graphql_flutter/graphql_flutter.dart';
 
 final appNavigator = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Google Ads init
+  // Google Ads
   MobileAds.instance.initialize();
-  RequestConfiguration configuration = RequestConfiguration(
-    testDeviceIds: ['TEST_DEVICE_ID'],
+  MobileAds.instance.updateRequestConfiguration(
+    RequestConfiguration(testDeviceIds: ['TEST_DEVICE_ID']),
   );
-  MobileAds.instance.updateRequestConfiguration(configuration);
 
-  // Hive init (graphql_flutter için gerekli)
+  // GraphQL (Hive storage)
   await initHiveForFlutter();
 
-  // GraphQL Client oluştur
+  // GraphQL Client (Bearer <token>)
   final httpLink = HttpLink('http://192.168.1.222:6189/api/graphql');
 
-  // Android emülatör → 192.168.1.222  simülatör → localhost, cihaz → LAN IP
+  final authLink = AuthLink(
+    getToken: () async {
+      final prefs = await SharedPreferences.getInstance();
+      final t = prefs.getString('token'); // login sonrası kaydedilen token
+      return (t == null || t.isEmpty) ? null : 'Bearer $t';
+    },
+  );
 
-  final ValueNotifier<GraphQLClient> client = ValueNotifier(
+  final link = authLink.concat(httpLink);
+
+  final client = ValueNotifier(
     GraphQLClient(
-      link: httpLink,
+      link: link,
       cache: GraphQLCache(store: HiveStore()),
     ),
   );
@@ -115,22 +124,21 @@ class MyApp extends StatelessWidget {
         child: MaterialApp(
           navigatorKey: appNavigator,
           title: AppName,
-          builder: (context, child) {
-            return ScrollConfiguration(behavior: MyBehavior(), child: child!);
-          },
+          builder: (context, child) =>
+              ScrollConfiguration(behavior: MyBehavior(), child: child!),
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             fontFamily: 'AirbnbCereal_W_Bk',
-            textSelectionTheme: TextSelectionThemeData(
+            textSelectionTheme: const TextSelectionThemeData(
               cursorColor: primaryColor,
             ),
             brightness: Brightness.light,
             scaffoldBackgroundColor: Colors.white,
-            bottomSheetTheme: BottomSheetThemeData(
+            bottomSheetTheme: const BottomSheetThemeData(
               backgroundColor: Colors.white,
             ),
-            dialogTheme: DialogThemeData(backgroundColor: Colors.white),
-            appBarTheme: AppBarTheme(
+            dialogTheme: const DialogThemeData(backgroundColor: Colors.white),
+            appBarTheme: const AppBarTheme(
               iconTheme: IconThemeData(color: Colors.black),
               backgroundColor: Colors.white,
               elevation: 0,
@@ -158,6 +166,6 @@ class MyBehavior extends ScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) {
-    return child;
+    return child; // overscroll glow kapalı
   }
 }

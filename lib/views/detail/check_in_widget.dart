@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend_bisarj/components/app_button.dart';
 import 'package:frontend_bisarj/utils/app_commons.dart';
-import '../../model/review_model.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 
 class CheckInWidget extends StatefulWidget {

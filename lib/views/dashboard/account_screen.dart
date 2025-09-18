@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:frontend_bisarj/graphql/mutations.dart';
 import 'package:frontend_bisarj/utils/app.constants.dart';
 import 'package:frontend_bisarj/utils/app_assets.dart';
 import 'package:frontend_bisarj/utils/app_colors.dart';
@@ -11,10 +12,10 @@ import 'package:frontend_bisarj/views/authe/personal_info/personal_info_screens.
 import 'package:frontend_bisarj/views/bank_detail/bank_detail_screens.dart';
 import 'package:frontend_bisarj/views/vehicle/select_vehicle/select_vehicel_screen.dart';
 import 'package:frontend_bisarj/views/wallet/with_draw_screen.dart';
-
 import '../../components/app_button.dart';
 import '../../utils/app_commons.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -55,6 +56,38 @@ class _AccountScreenState extends State<AccountScreen>
     super.didChangeDependencies();
     _currentOrientation = MediaQuery.of(context).orientation;
     _loadAd();
+  }
+
+  Future<void> _runLogout({bool allSessions = true}) async {
+    final client = GraphQLProvider.of(context).value;
+
+    try {
+      final res = await client.mutate(
+        MutationOptions(
+          document: gql(logoutMutation), 
+          variables: {'allSessions': allSessions},
+        ),
+      );
+
+      if (res.hasException) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Logout failed: ${res.exception}')),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
   }
 
   Future<void> _loadAd() async {
@@ -124,13 +157,36 @@ class _AccountScreenState extends State<AccountScreen>
                       ),
                     ),
                     SizedBox(width: 16),
-                    Column(
-                      children: [
-                        Text('Andrew Ainsley', style: BoldTextStyle()),
-                        SizedBox(height: 8),
-                        Text('+91 98987653432', style: PrimaryTextStyle()),
-                      ],
+                    Expanded(
+                      child: Query(
+                        options: QueryOptions(
+                          document: gql(meUserQuery),
+                          fetchPolicy: FetchPolicy.cacheAndNetwork,
+                        ),
+                        builder: (result, {refetch, fetchMore}) {
+                          if (result.isLoading && result.data == null) {
+                            return Text('...', style: BoldTextStyle());
+                          }
+                          if (result.hasException) {
+                            return Text('—', style: BoldTextStyle());
+                          }
+
+                          final u = result.data?['meUser']?['user'];
+                          final fullName = u == null
+                              ? ''
+                              : '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'
+                                    .trim();
+
+                          return Text(
+                            fullName.isEmpty ? '—' : fullName,
+                            style: BoldTextStyle(),
+                            overflow: TextOverflow.ellipsis,
+                          );
+                        },
+                      ),
                     ),
+                    SizedBox(width: 16),
+
                     Expanded(child: SizedBox(width: 16)),
                     Icon(Icons.arrow_forward_ios_outlined),
                   ],
@@ -370,8 +426,8 @@ class _AccountScreenState extends State<AccountScreen>
                                     ),
                                     backgroundColor: primaryColor,
                                     text: 'Cancel',
-                                    onPressed: () {
-                                      Navigator.pop(context);
+                                    onPressed: () async {
+                                      await _runLogout(allSessions: true);
                                     },
                                   ),
                                 ),

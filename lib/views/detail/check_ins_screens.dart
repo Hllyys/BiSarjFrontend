@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend_bisarj/model/check_in_model.dart';
 import 'package:frontend_bisarj/utils/app_commons.dart';
-import '../../model/review_model.dart';
 import '../../utils/app_assets.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';

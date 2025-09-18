@@ -1,13 +1,4 @@
 import 'dart:io';
-
-// import 'package:ev/model/payment_model.dart';
-// import 'package:ev/model/user_model.dart';
-// import 'package:ev/utils/app_commons.dart';
-// import 'package:ev/utils/app_data_provider.dart';
-// import 'package:ev/views/vehicle/add_brand/add_brand_screen.dart';
-// import 'package:ev/views/vehicle/select_charger_screen.dart';
-// import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-// import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend_bisarj/model/payment_model.dart';
 import 'package:frontend_bisarj/model/user_model.dart';
@@ -19,7 +10,6 @@ import 'package:frontend_bisarj/views/vehicle/select_charger_screen.dart';
 import '../../../components/alert_dailog_widget.dart';
 import '../../../components/app_button.dart';
 import '../../../utils/app_colors.dart';
-//import '../../../utils/app_constants.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 

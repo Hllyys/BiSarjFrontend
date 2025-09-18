@@ -1,17 +1,27 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';  
 import 'package:graphql_flutter/graphql_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-ValueNotifier<GraphQLClient> initGraphQLClient({String? token}) {
+Future<ValueNotifier<GraphQLClient>> buildGraphQLClient() async {
+  await initHiveForFlutter();
+
   final httpLink = HttpLink('http://192.168.1.222:6189/api/graphql');
 
-  Link link = httpLink;
+  final authLink = AuthLink(
+    getToken: () async {
+      final prefs = await SharedPreferences.getInstance();
+      final t = prefs.getString('token');
+      debugPrint('AuthLink token: $t'); // geçici log
+      return (t == null || t.isEmpty) ? null : 'Bearer $t';
+    },
+  );
 
-  if (token != null && token.isNotEmpty) {
-    final authLink = AuthLink(getToken: () async => 'Bearer $token');
-    link = authLink.concat(httpLink);
-  }
+  final link = authLink.concat(httpLink);
 
   return ValueNotifier(
-    GraphQLClient(link: link, cache: GraphQLCache(store: null)),
+    GraphQLClient(
+      link: link,
+      cache: GraphQLCache(store: HiveStore()),
+    ),
   );
 }
