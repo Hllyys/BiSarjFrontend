@@ -11,7 +11,7 @@ mutation Login($email: String!, $password: String!) {
   }
 }
 ''';
-
+//kayıt olmak için
 const String registerMutation = r'''
 mutation CreateUser(
   $firstName: String!, 
@@ -39,7 +39,7 @@ mutation CreateUser(
   }
 }
 ''';
-
+// Şifremi unuttum
 const String forgotPasswordMutation = r'''
 mutation ForgotPassword(
   $email: String!,
@@ -51,5 +51,41 @@ mutation ForgotPassword(
     expiration: $expiration,
     disableEmail: $disableEmail
   )
+}
+''';
+
+// Kullanıcının kendisini çekmek (id lazım)
+const String meUserQuery = r'''
+query MeUser {
+  meUser {
+    token        
+    user {
+      id
+      email
+      firstName
+      lastName
+      address
+    }
+  }
+}
+''';
+
+// Kullanıcı güncelleme
+const String updateUserMutation = r'''
+mutation UpdateUser($id: Int!, $data: mutationUserUpdateInput!) {
+  updateUser(id: $id, data: $data) {
+    id
+    firstName
+    lastName
+    email
+    address
+    updatedAt
+  }
+}
+''';
+//logout
+const String logoutMutation = r'''
+mutation Logout($allSessions: Boolean) {
+  logoutUser(allSessions: $allSessions)
 }
 ''';
