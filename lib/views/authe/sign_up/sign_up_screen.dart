@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:frontend_bisarj/views/vehicle/vehicle_screen.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -7,6 +6,7 @@ import '../../../graphql/mutations.dart';
 import '../../../components/app_button.dart';
 import '../../../utils/app_colors.dart';
 import '../../../utils/app_commons.dart';
+import 'package:frontend_bisarj/views/authe/login/login_screen.dart';
 
 class SignUpScreens extends StatefulWidget {
   const SignUpScreens({super.key});
@@ -108,9 +108,9 @@ class _SignUpScreensState extends State<SignUpScreens> {
       );
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const VehicleScreen()),
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
         );
       }
     } catch (e) {

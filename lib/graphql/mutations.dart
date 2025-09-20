@@ -89,3 +89,14 @@ mutation Logout($allSessions: Boolean) {
   logoutUser(allSessions: $allSessions)
 }
 ''';
+
+const String deleteUser = r'''
+  mutation DeleteUser($id: Int!, $trash: Boolean) {
+    deleteUser(id: $id, trash: $trash) {
+      id
+      email
+      firstName
+      lastName
+    }
+  }
+  ''';
