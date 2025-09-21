@@ -100,3 +100,13 @@ const String deleteUser = r'''
     }
   }
   ''';
+
+//Station harita üzerinde gösterme
+const String listChargeStationsQuery = r'''
+  query ListChargeStations($locale: LocaleInputType, $limit: Int) {
+    Charge_stations(locale: $locale, limit: $limit) {
+      docs { id name location company(locale: $locale) { id name } }
+      totalDocs page totalPages
+    }
+  }
+''';
