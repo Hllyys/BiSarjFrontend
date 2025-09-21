@@ -1,16 +1,17 @@
-import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:latlong2/latlong.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:frontend_bisarj/components/app_button.dart';
 import 'package:frontend_bisarj/utils/app_assets.dart';
 import 'package:frontend_bisarj/utils/app_colors.dart';
-import 'package:frontend_bisarj/utils/app_data_provider.dart';
 import '../../model/charging_station_model.dart';
 import '../../utils/app_commons.dart';
-import '../detail/details_screes.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:frontend_bisarj/graphql/mutations.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,85 +21,117 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int currentIndex = 0;
+  // UI flags
+  bool isChange = false; // map/list toggle
+  bool isChange1 = false; // fab visibility helper
+  bool isMarker = false; // bottom pager visibility
 
-  bool isChange = false;
-  bool isChange1 = false;
-  bool isMarker = false;
+  // Backend docs
+  List<Map<String, dynamic>> stationDocs = [];
 
-  String currentTitle = '';
+  // Eğer başka yerlerde kullanıyorsan; mock kapalı
+  List<ChargingStationModel> chargingStationList = [];
 
-  List<ChargingStationModel> chargingStationList = chargingStationListData();
+  // Map
+  final fm.MapController mapController = fm.MapController();
+  final List<fm.Marker> markers = [];
 
-  LatLng currentLocation = LatLng(31.1471, 75.3412);
+  LatLng initialCenter = const LatLng(41.015137, 28.979530); // İstanbul
+  double initialZoom = 6.0;
+  LatLng currentLocation = const LatLng(41.015137, 28.979530);
 
-  var marker = <Marker>[];
+  // Optional marker icon
+  Uint8List? availableIconBytes;
 
-  int currentValue = 0;
-  Completer<GoogleMapController> controllerGoogleMap =
-      Completer<GoogleMapController>();
-  CameraPosition cameraPosition = CameraPosition(
-    target: LatLng(31.1471, 75.3412),
-    zoom: 15.4746,
-  );
-
-  getCameraPosition({required double source, required double destination}) {
-    return CameraPosition(target: LatLng(source, destination), zoom: 8);
-  }
+  // fetch once
+  bool _fetched = false;
 
   @override
   void initState() {
-    cameraPosition = CameraPosition(
-      target: LatLng(31.1471, 75.3412),
-      zoom: 4.0,
-    );
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      getBytesFromAsset();
-    });
+    _loadMarkerIcons();
   }
 
-  void getBytesFromAsset() async {
-    /// For available
-    ByteData data = await rootBundle.load(ic_ev_station_available);
-    ui.Codec codec = await ui.instantiateImageCodec(
-      data.buffer.asUint8List(),
-      targetWidth: 100,
-    );
-    ui.FrameInfo fi = await codec.getNextFrame();
-    var availableIcon = (await fi.image.toByteData(
-      format: ui.ImageByteFormat.png,
-    ))!.buffer.asUint8List();
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_fetched) {
+      _fetched = true;
+      _fetchStations();
+    }
+  }
 
-    /// For Unavailable
-    ByteData data2 = await rootBundle.load(ic_ev_station_unavailable);
-    ui.Codec codec2 = await ui.instantiateImageCodec(
-      data2.buffer.asUint8List(),
-      targetWidth: 100,
-    );
-    ui.FrameInfo fi2 = await codec2.getNextFrame();
-    var unavailableIcon = (await fi2.image.toByteData(
-      format: ui.ImageByteFormat.png,
-    ))!.buffer.asUint8List();
-    chargingStationList.forEach((data) {
-      int index = chargingStationList.indexOf(data);
-      marker.add(
-        Marker(
-          onTap: () {
-            //
-          },
-          markerId: MarkerId(index.toString()),
-          position: LatLng(
-            data.stationLocation!.latitude,
-            data.stationLocation!.longitude,
-          ),
-          infoWindow: InfoWindow(title: data.stationName ?? ''),
-          icon: BitmapDescriptor.fromBytes(
-            data.status == "Available" ? availableIcon : unavailableIcon,
-          ),
-        ),
+  //Payload GraphQL `location` dizisi [lat, lng] geliyor.
+  LatLng latLngFromPayload(List<dynamic> loc) {
+    final lat = (loc[0] as num).toDouble();
+    final lng = (loc[1] as num).toDouble();
+    return LatLng(lat, lng);
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    try {
+      final d1 = await rootBundle.load(ic_ev_station_available);
+      final c1 = await ui.instantiateImageCodec(
+        d1.buffer.asUint8List(),
+        targetWidth: 100,
       );
-    });
+      final f1 = await c1.getNextFrame();
+      availableIconBytes = (await f1.image.toByteData(
+        format: ui.ImageByteFormat.png,
+      ))!.buffer.asUint8List();
+      setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _fetchStations() async {
+    final client = GraphQLProvider.of(context).value;
+
+    final res = await client.query(
+      QueryOptions(
+        document: gql(listChargeStationsQuery),
+        variables: {'locale': 'tr', 'limit': 200},
+        fetchPolicy: FetchPolicy.networkOnly,
+      ),
+    );
+
+    if (res.hasException) {
+      debugPrint('linkException: ${res.exception?.linkException}');
+      for (final e in res.exception!.graphqlErrors) {
+        debugPrint('graphqlError: ${e.message}');
+      }
+      return;
+    }
+
+    final data = res.data?['Charge_stations'];
+    final docs = (data?['docs'] ?? []) as List;
+
+    stationDocs = docs.cast<Map<String, dynamic>>();
+
+    // Markerları doldur (location = [lat, lng])
+    markers
+      ..clear()
+      ..addAll(
+        stationDocs.map((doc) {
+          final point = latLngFromPayload(doc['location'] as List);
+          return fm.Marker(
+            point: point,
+            width: 40,
+            height: 40,
+            alignment: Alignment.topCenter,
+            child: Tooltip(
+              message: (doc['name'] ?? 'Station').toString(),
+              child: availableIconBytes != null
+                  ? Image.memory(availableIconBytes!, width: 40, height: 40)
+                  : const Icon(Icons.ev_station, size: 40, color: Colors.green),
+            ),
+          );
+        }),
+      );
+
+    if (markers.isNotEmpty) {
+      initialCenter = markers.first.point;
+    }
+
     setState(() {});
   }
 
@@ -113,15 +146,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 FloatingActionButton.small(
                   heroTag: 'btn1',
                   backgroundColor: primaryColor,
-                  child: Icon(Icons.location_on_outlined, color: Colors.white),
-                  onPressed: () async {
+                  child: const Icon(
+                    Icons.location_on_outlined,
+                    color: Colors.white,
+                  ),
+                  onPressed: () {
                     isChange = false;
                     isMarker = true;
                     isChange1 = true;
                     setState(() {});
                   },
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
+                FloatingActionButton.small(
+                  heroTag: 'zoomIn',
+                  backgroundColor: primaryColor,
+                  child: const Icon(Icons.zoom_in, color: Colors.white),
+                  onPressed: () {
+                    // yakınlaştırma işlemi  eklenecek
+                  },
+                ),
+                const SizedBox(width: 8),
                 FloatingActionButton.small(
                   heroTag: 'btn2',
                   backgroundColor: primaryColor,
@@ -129,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     isChange ? Icons.list : Icons.map_outlined,
                     color: Colors.white,
                   ),
-                  onPressed: () async {
+                  onPressed: () {
                     isChange = !isChange;
                     setState(() {});
                   },
@@ -144,412 +189,292 @@ class _HomeScreenState extends State<HomeScreen> {
     return Stack(
       alignment: Alignment.bottomCenter,
       children: [
-        GoogleMap(
-          initialCameraPosition: cameraPosition,
-          markers: Set<Marker>.of(marker),
-          onTap: (val) {
-            print(val.longitude);
-          },
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-          myLocationButtonEnabled: false,
-          onMapCreated: (GoogleMapController con) async {
-            if (controllerGoogleMap.isCompleted) {
-              controllerGoogleMap = Completer<GoogleMapController>();
-              await Future.delayed(Duration.zero);
-              controllerGoogleMap.complete(con);
-            } else {
-              controllerGoogleMap.complete(con);
-            }
-          },
+        fm.FlutterMap(
+          mapController: mapController,
+          options: fm.MapOptions(
+            initialCenter: initialCenter,
+            initialZoom: initialZoom,
+            minZoom: 2,
+            maxZoom: 19,
+          ),
+          children: [
+            fm.TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.example.frontend_bisarj',
+            ),
+            fm.MarkerLayer(markers: markers),
+          ],
         ),
-        if (isMarker)
-          Column(
-            mainAxisSize: MainAxisSize.min,
+
+        if (isMarker) _bottomPager(),
+      ],
+    );
+  }
+
+  Widget _bottomPager() {
+    if (stationDocs.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    FloatingActionButton.small(
-                      heroTag: 'btn1',
-                      backgroundColor: primaryColor,
-                      child: Icon(
-                        Icons.location_on_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: () async {
-                        isChange1 = false;
-                        isMarker = false;
-                        setState(() {});
-                      },
-                    ),
-                    SizedBox(width: 8),
-                    FloatingActionButton.small(
-                      heroTag: 'btn2',
-                      backgroundColor: primaryColor,
-                      child: Icon(
-                        isChange ? Icons.list : Icons.map_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: () {
-                        isChange1 = false;
-                        isMarker = false;
-                        setState(() {});
-                      },
-                    ),
-                    SizedBox(width: 8),
-                    FloatingActionButton.small(
-                      heroTag: 'btn3',
-                      backgroundColor: primaryColor,
-                      child: const Icon(
-                        Icons.my_location_outlined,
-                        color: Colors.white,
-                      ),
-                      onPressed: () async {
-                        isChange = false;
-                        isMarker = false;
-                        isChange1 = false;
-
-                        final GoogleMapController con =
-                            await controllerGoogleMap.future;
-
-                        con.animateCamera(
-                          CameraUpdate.newCameraPosition(
-                            getCameraPosition(
-                              source: currentLocation.latitude,
-                              destination: currentLocation.longitude,
-                            ),
-                          ),
-                        );
-
-                        marker.add(
-                          Marker(
-                            onTap: () {
-                              //
-                            },
-                            markerId: MarkerId('1'),
-                            position: LatLng(
-                              currentLocation.latitude,
-                              currentLocation.longitude,
-                            ),
-                            infoWindow: InfoWindow(title: 'Current Location'),
-                            icon: BitmapDescriptor.defaultMarkerWithHue(
-                              BitmapDescriptor.hueGreen,
-                            ),
-                          ),
-                        );
-                        setState(() {});
-                      },
-                    ),
-                  ],
+              FloatingActionButton.small(
+                heroTag: 'btn1',
+                backgroundColor: primaryColor,
+                child: const Icon(
+                  Icons.location_on_outlined,
+                  color: Colors.white,
                 ),
+                onPressed: () {
+                  isChange1 = false;
+                  isMarker = false;
+                  setState(() {});
+                },
               ),
-              Container(
-                height: 300,
-                child: PageView.builder(
-                  itemCount: chargingStationList.length,
-                  itemBuilder: (_, index) {
-                    ChargingStationModel data = chargingStationList[index];
-                    return Container(
-                      margin: EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(25),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
-                            blurRadius: 1,
-                          ),
-                        ],
-                      ),
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  data.stationName ?? '',
-                                  style: BoldTextStyle(size: 16),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              SizedBox(width: 16),
-                              inkWellWidget(
-                                onTap: () {
-                                  mapDirection(
-                                    latitude: data.stationLocation!.latitude,
-                                    longitude: data.stationLocation!.longitude,
-                                  );
-                                },
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: primaryColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  padding: EdgeInsets.all(8),
-                                  child: Icon(
-                                    Icons.near_me,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            data.stationAddress ?? '',
-                            style: SecondaryTextStyle(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Text(
-                                data.avgReviewCount ?? '',
-                                style: BoldTextStyle(),
-                              ),
-                              SizedBox(width: 8),
-                              Row(
-                                children: List.generate(5, (index) {
-                                  return Padding(
-                                    padding: EdgeInsets.only(left: 2, right: 2),
-                                    child: Icon(
-                                      Icons.star,
-                                      color: Colors.amber,
-                                      size: 15,
-                                    ),
-                                  );
-                                }),
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                '(${data.totalReview} reviews)',
-                                style: PrimaryTextStyle(color: Colors.black),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: data.status == 'Available'
-                                      ? primaryColor
-                                      : Colors.red,
-                                  borderRadius: BorderRadius.circular(5),
-                                ),
-                                padding: EdgeInsets.all(8),
-                                child: Text(
-                                  data.status ?? '',
-                                  style: PrimaryTextStyle(
-                                    color: Colors.white,
-                                    size: 12,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(width: 16),
-                              Icon(
-                                Icons.location_on_outlined,
-                                color: Colors.grey,
-                                size: 15,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                data.avgReviewCount ?? '',
-                                style: PrimaryTextStyle(),
-                              ),
-                              SizedBox(width: 16),
-                              Icon(
-                                Icons.directions_car,
-                                color: Colors.grey,
-                                size: 15,
-                              ),
-                              SizedBox(width: 8),
-                              Text('5 mins', style: PrimaryTextStyle()),
-                            ],
-                          ),
-                          SizedBox(height: 8),
-                          Divider(),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Row(
-                                  children: List.generate(
-                                    data.chargerModel!.length,
-                                    (_) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 4,
-                                          right: 4,
-                                        ),
-                                        child: Image.asset(
-                                          data
-                                              .chargerModel![index]
-                                              .chargerImage!,
-                                          height: 30,
-                                          width: 30,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                '${data.chargerModel!.length} Charger',
-                                style: TextStyle(
-                                  color: primaryColor,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          Divider(),
-                          SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: AppButton(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: 4,
-                                    horizontal: 4,
-                                  ),
-                                  backgroundColor: primaryColor,
-                                  text: 'View',
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => DetailScrees(
-                                          chargingStationData: data,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              SizedBox(width: 16),
-                              Expanded(
-                                child: AppButton(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: 4,
-                                    horizontal: 4,
-                                  ),
-                                  text: 'Book',
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => DetailScrees(
-                                          chargingStationData: data,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                  controller: PageController(
-                    initialPage: chargingStationList.length,
-                    keepPage: true,
-                  ),
-                  onPageChanged: (val) async {
-                    currentValue = val;
-                    final GoogleMapController con =
-                        await controllerGoogleMap.future;
-
-                    con.animateCamera(
-                      CameraUpdate.newCameraPosition(
-                        getCameraPosition(
-                          source: chargingStationList[currentValue]
-                              .stationLocation!
-                              .latitude,
-                          destination: chargingStationList[currentValue]
-                              .stationLocation!
-                              .longitude,
-                        ),
-                      ),
-                    );
-                    setState(() {});
-                  },
+              const SizedBox(width: 8),
+              FloatingActionButton.small(
+                heroTag: 'btn2',
+                backgroundColor: primaryColor,
+                child: const Icon(Icons.map_outlined, color: Colors.white),
+                onPressed: () {
+                  isChange1 = false;
+                  isMarker = false;
+                  setState(() {});
+                },
+              ),
+              const SizedBox(width: 8),
+              FloatingActionButton.small(
+                heroTag: 'btn3',
+                backgroundColor: primaryColor,
+                child: const Icon(
+                  Icons.my_location_outlined,
+                  color: Colors.white,
                 ),
+                onPressed: () {
+                  isChange = false;
+                  isMarker = false;
+                  isChange1 = false;
+                  mapController.move(currentLocation, 12);
+                  markers.add(
+                    fm.Marker(
+                      point: currentLocation,
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.topCenter,
+                      child: const Icon(
+                        Icons.location_pin,
+                        size: 40,
+                        color: Colors.green,
+                      ),
+                    ),
+                  );
+                  setState(() {});
+                },
               ),
             ],
           ),
+        ),
+        SizedBox(
+          height: 300,
+          child: PageView.builder(
+            itemCount: stationDocs.length,
+            controller: PageController(initialPage: 0, keepPage: true),
+            onPageChanged: (val) {
+              final p = latLngFromPayload(stationDocs[val]['location'] as List);
+              mapController.move(p, 12);
+            },
+            itemBuilder: (_, index) {
+              final d = stationDocs[index];
+              final name = (d['name'] ?? '') as String;
+              final company = (d['company']?['name'] ?? '') as String;
+              final p = latLngFromPayload(d['location'] as List);
+
+              return Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: BoldTextStyle(size: 16),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        inkWellWidget(
+                          onTap: () => mapDirection(
+                            latitude: p.latitude,
+                            longitude: p.longitude,
+                          ),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            padding: const EdgeInsets.all(8),
+                            child: const Icon(
+                              Icons.near_me,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      company,
+                      style: SecondaryTextStyle(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: primaryColor,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          padding: const EdgeInsets.all(8),
+                          child: const Text(
+                            'Available',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Icon(
+                          Icons.location_on_outlined,
+                          color: Colors.grey,
+                          size: 15,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${p.latitude.toStringAsFixed(5)}, ${p.longitude.toStringAsFixed(5)}',
+                          style: PrimaryTextStyle(),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: AppButton(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 4,
+                              horizontal: 4,
+                            ),
+                            backgroundColor: primaryColor,
+                            text: 'View',
+                            onPressed: () {
+                              Navigator.pop(context);
+                              mapDirection(
+                                latitude: p.latitude,
+                                longitude: p.longitude,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: AppButton(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 4,
+                              horizontal: 4,
+                            ),
+                            text: 'Book',
+                            onPressed: () {},
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
 
   Widget listWidget() {
+    final items = stationDocs;
     return AnimationLimiter(
       child: ListView.separated(
-        separatorBuilder: (_, index) => Divider(),
-        padding: EdgeInsets.only(top: 50, left: 16, right: 16, bottom: 16),
-        itemCount: chargingStationList.length,
+        separatorBuilder: (_, __) => const Divider(),
+        padding: const EdgeInsets.only(
+          top: 50,
+          left: 16,
+          right: 16,
+          bottom: 16,
+        ),
+        itemCount: items.length,
         itemBuilder: (_, index) {
-          ChargingStationModel data = chargingStationList[index];
+          final d = items[index];
+          final name = (d['name'] ?? '') as String;
+          final company = (d['company']?['name'] ?? '') as String;
+          final p = latLngFromPayload(d['location'] as List);
 
           return Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 8),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: AnimationConfiguration.staggeredList(
               position: index,
               duration: const Duration(milliseconds: 500),
               child: inkWellWidget(
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => DetailScrees(chargingStationData: data),
-                    ),
-                  );
+                  mapController.move(p, 12);
+                  setState(() => isChange = false); // haritaya dön
                 },
                 child: FlipAnimation(
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: Image.asset(
-                          data.status == "Available"
-                              ? ic_ev_station_available
-                              : ic_ev_station_unavailable,
-                          fit: BoxFit.cover,
-                          height: 40,
-                          width: 40,
-                        ),
+                        child: availableIconBytes != null
+                            ? Image.memory(
+                                availableIconBytes!,
+                                height: 40,
+                                width: 40,
+                              )
+                            : const Icon(
+                                Icons.ev_station,
+                                size: 40,
+                                color: Colors.green,
+                              ),
                       ),
-                      SizedBox(width: 16),
+                      const SizedBox(width: 16),
                       Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              data.stationName ?? '',
-                              style: BoldTextStyle(),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              data.stationAddress ?? '',
-                              style: SecondaryTextStyle(size: 12),
-                            ),
+                            Text(name, style: BoldTextStyle()),
+                            const SizedBox(height: 4),
+                            Text(company, style: SecondaryTextStyle(size: 12)),
                           ],
                         ),
                       ),
-                      Icon(Icons.arrow_forward_ios_rounded, size: 20),
+                      const Icon(Icons.arrow_forward_ios_rounded, size: 20),
                     ],
                   ),
                 ),
