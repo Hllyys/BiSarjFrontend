@@ -78,7 +78,8 @@ class _SelectVehicelScreenState extends State<SelectVehicelScreen> {
     }
   }
 
-  ///  Marka ekle
+  /*
+  /// 🟢 Marka ekle
   Future<void> addBrand(String name) async {
     try {
       final client = await buildGraphQLClient();
@@ -100,78 +101,7 @@ class _SelectVehicelScreenState extends State<SelectVehicelScreen> {
     }
   }
 
-  //  Marka güncelle
-  Future<void> updateBrand(int id, String newName) async {
-    try {
-      final client = await buildGraphQLClient();
-      final result = await client.value.mutate(
-        MutationOptions(
-          document: gql(updateCarBrandMutation),
-          variables: {"id": id, "name": newName},
-        ),
-      );
-
-      if (result.hasException) {
-        _showSnackBar("Güncelleme hatası", Colors.red);
-      } else {
-        _showSnackBar("Güncellendi", Colors.green);
-        await fetchBrands(page: 1);
-      }
-    } catch (e) {
-      _showSnackBar("Hata: $e", Colors.red);
-    }
-  }
-
-  // Marka sil
-  Future<void> deleteBrand(int id) async {
-    try {
-      final client = await buildGraphQLClient();
-      final result = await client.value.mutate(
-        MutationOptions(
-          document: gql(deleteCarBrandMutation),
-          variables: {"id": id},
-        ),
-      );
-
-      if (result.hasException) {
-        _showSnackBar("Silme hatası", Colors.red);
-      } else {
-        setState(() => brandList.removeWhere((b) => b['id'] == id));
-        _showSnackBar("Silindi", Colors.green);
-      }
-    } catch (e) {
-      _showSnackBar("Hata: $e", Colors.red);
-    }
-  }
-
-  // Kopyala
-  Future<void> duplicateBrand(String name) async {
-    final newName = "${name}_copy";
-    await addBrand(newName);
-  }
-
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Future<void> _loadAd() async {
-    _anchoredAdaptiveAd = BannerAd(
-      adUnitId: Platform.isAndroid ? androidBannerAdsKey : iOSBannerAdsKey,
-      size: AdSize.banner,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (_) => setState(() => _isLoaded = true),
-      ),
-    );
-    _anchoredAdaptiveAd!.load();
-  }
-
+  /// 🟢 Ekleme dialog'u
   void openAddBrandDialog() {
     final controller = TextEditingController();
     showDialog(
@@ -197,6 +127,79 @@ class _SelectVehicelScreenState extends State<SelectVehicelScreen> {
         ],
       ),
     );
+  }
+  */
+
+  // 🔶 Güncelle
+  Future<void> updateBrand(int id, String newName) async {
+    try {
+      final client = await buildGraphQLClient();
+      final result = await client.value.mutate(
+        MutationOptions(
+          document: gql(updateCarBrandMutation),
+          variables: {"id": id, "name": newName},
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar("Güncelleme hatası", Colors.red);
+      } else {
+        _showSnackBar("Güncellendi", Colors.green);
+        await fetchBrands(page: 1);
+      }
+    } catch (e) {
+      _showSnackBar("Hata: $e", Colors.red);
+    }
+  }
+
+  // 🔶 Sil
+  Future<void> deleteBrand(int id) async {
+    try {
+      final client = await buildGraphQLClient();
+      final result = await client.value.mutate(
+        MutationOptions(
+          document: gql(deleteCarBrandMutation),
+          variables: {"id": id},
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar("Silme hatası", Colors.red);
+      } else {
+        setState(() => brandList.removeWhere((b) => b['id'] == id));
+        _showSnackBar("Silindi", Colors.green);
+      }
+    } catch (e) {
+      _showSnackBar("Hata: $e", Colors.red);
+    }
+  }
+
+  // 🔶 Kopyala
+  Future<void> duplicateBrand(String name) async {
+    final newName = "${name}_copy";
+    // addBrand(newName); // ❌ Ekleme fonksiyonu devre dışı
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _loadAd() async {
+    _anchoredAdaptiveAd = BannerAd(
+      adUnitId: Platform.isAndroid ? androidBannerAdsKey : iOSBannerAdsKey,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) => setState(() => _isLoaded = true),
+      ),
+    );
+    _anchoredAdaptiveAd!.load();
   }
 
   void openEditBrandDialog(dynamic brand) {
@@ -229,10 +232,13 @@ class _SelectVehicelScreenState extends State<SelectVehicelScreen> {
       appBar: AppBar(
         title: const Text('Marka Seç'),
         actions: [
+          /*
+          // 🟢 Ekleme butonu da devre dışı
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
             onPressed: openAddBrandDialog,
           ),
+          */
         ],
       ),
       body: isLoading && brandList.isEmpty
