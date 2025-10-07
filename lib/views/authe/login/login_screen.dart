@@ -76,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ).showSnackBar(SnackBar(content: Text(result.exception.toString())));
     } else {
       final token = result.data?['loginUser']['token'];
-      final user = result.data?['loginUser']['user'];
+      final user = result.data?['loginUser']['user']; /*  */
 
       if (token != null) {
         final prefs = await SharedPreferences.getInstance();
@@ -97,6 +97,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // Token  user bilgilerini kaydet
         await prefs.setString("token", token);
+        print('Token kaydedildi: $token');
+
         await prefs.setString("userFirstName", user['firstName']);
         await prefs.setString("userLastName", user['lastName']);
       }
@@ -180,8 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Checkbox(
                   value: isRemember,
                   activeColor: primaryColor,
-                  onChanged: (val) =>
-                      setState(() => isRemember = val ?? false), 
+                  onChanged: (val) => setState(() => isRemember = val ?? false),
                 ),
                 const SizedBox(width: 8),
                 Expanded(

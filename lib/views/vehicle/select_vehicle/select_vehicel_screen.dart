@@ -1,17 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:frontend_bisarj/model/payment_model.dart';
-import 'package:frontend_bisarj/model/user_model.dart';
+import 'package:frontend_bisarj/graphql/mutations.dart';
 import 'package:frontend_bisarj/utils/app.constants.dart';
 import 'package:frontend_bisarj/utils/app_commons.dart';
-import 'package:frontend_bisarj/utils/app_data_provider.dart';
 import 'package:frontend_bisarj/views/vehicle/add_brand/add_brand_screen.dart';
-import 'package:frontend_bisarj/views/vehicle/select_charger_screen.dart';
-import '../../../components/alert_dailog_widget.dart';
-import '../../../components/app_button.dart';
-import '../../../utils/app_colors.dart';
+import 'package:frontend_bisarj/views/vehicle/select_model_screen.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
+import '../../../graphql/graphql_client.dart';
 
 class SelectVehicelScreen extends StatefulWidget {
   const SelectVehicelScreen({super.key});
@@ -21,261 +17,290 @@ class SelectVehicelScreen extends StatefulWidget {
 }
 
 class _SelectVehicelScreenState extends State<SelectVehicelScreen> {
-  int currentIndex = 0;
+  List<dynamic> brandList = [];
+  bool isLoading = false;
+  int currentPage = 1;
+  final int limit = 20;
+  bool hasNextPage = true;
 
-  List<MyVehicleModel> vehicleIds = [];
-  List<PaymentModel> vehicelData = carList();
-
-  late userModel userData;
-
-  /// BannerAd variable
+  final ScrollController _scrollController = ScrollController();
   BannerAd? _anchoredAdaptiveAd;
   bool _isLoaded = false;
-  late Orientation _currentOrientation;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _currentOrientation = MediaQuery.of(context).orientation;
+  void initState() {
+    super.initState();
+    fetchBrands();
     _loadAd();
+
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 200 &&
+          hasNextPage &&
+          !isLoading) {
+        currentPage++;
+        fetchBrands(page: currentPage);
+      }
+    });
+  }
+
+  Future<void> fetchBrands({int page = 1}) async {
+    setState(() => isLoading = true);
+    try {
+      final client = await buildGraphQLClient();
+      final result = await client.value.query(
+        QueryOptions(
+          document: gql(getCarBrandsQuery),
+          variables: {'page': page, 'limit': limit},
+          fetchPolicy: FetchPolicy.networkOnly,
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar("Hata: ${result.exception.toString()}", Colors.red);
+        return;
+      }
+
+      final docs = result.data?['CarBrands']?['docs'] ?? [];
+      hasNextPage = result.data?['CarBrands']?['hasNextPage'] ?? false;
+
+      setState(() {
+        if (page == 1) {
+          brandList = docs;
+        } else {
+          brandList.addAll(docs);
+        }
+      });
+    } catch (e) {
+      _showSnackBar("Hata: $e", Colors.red);
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  ///  Marka ekle
+  Future<void> addBrand(String name) async {
+    try {
+      final client = await buildGraphQLClient();
+      final result = await client.value.mutate(
+        MutationOptions(
+          document: gql(createCarBrandMutation),
+          variables: {"name": name},
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar("Ekleme hatası", Colors.red);
+      } else {
+        _showSnackBar("Marka eklendi", Colors.green);
+        await fetchBrands(page: 1);
+      }
+    } catch (e) {
+      _showSnackBar("Hata: $e", Colors.red);
+    }
+  }
+
+  //  Marka güncelle
+  Future<void> updateBrand(int id, String newName) async {
+    try {
+      final client = await buildGraphQLClient();
+      final result = await client.value.mutate(
+        MutationOptions(
+          document: gql(updateCarBrandMutation),
+          variables: {"id": id, "name": newName},
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar("Güncelleme hatası", Colors.red);
+      } else {
+        _showSnackBar("Güncellendi", Colors.green);
+        await fetchBrands(page: 1);
+      }
+    } catch (e) {
+      _showSnackBar("Hata: $e", Colors.red);
+    }
+  }
+
+  // Marka sil
+  Future<void> deleteBrand(int id) async {
+    try {
+      final client = await buildGraphQLClient();
+      final result = await client.value.mutate(
+        MutationOptions(
+          document: gql(deleteCarBrandMutation),
+          variables: {"id": id},
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar("Silme hatası", Colors.red);
+      } else {
+        setState(() => brandList.removeWhere((b) => b['id'] == id));
+        _showSnackBar("Silindi", Colors.green);
+      }
+    } catch (e) {
+      _showSnackBar("Hata: $e", Colors.red);
+    }
+  }
+
+  // Kopyala
+  Future<void> duplicateBrand(String name) async {
+    final newName = "${name}_copy";
+    await addBrand(newName);
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _loadAd() async {
-    await _anchoredAdaptiveAd?.dispose();
-    setState(() {
-      _anchoredAdaptiveAd = null;
-      _isLoaded = false;
-    });
-
     _anchoredAdaptiveAd = BannerAd(
       adUnitId: Platform.isAndroid ? androidBannerAdsKey : iOSBannerAdsKey,
       size: AdSize.banner,
-      request: AdRequest(),
+      request: const AdRequest(),
       listener: BannerAdListener(
-        onAdLoaded: (Ad ad) {
-          print('$ad loaded: ${ad.responseInfo}');
-          setState(() {
-            _anchoredAdaptiveAd = ad as BannerAd;
-            _isLoaded = true;
-          });
-        },
-        onAdFailedToLoad: (Ad ad, LoadAdError error) {
-          _anchoredAdaptiveAd = ad as BannerAd;
-          setState(() {});
-          print('===>>>$error');
-          ad.dispose();
-        },
+        onAdLoaded: (_) => setState(() => _isLoaded = true),
       ),
     );
-    return _anchoredAdaptiveAd!.load();
+    _anchoredAdaptiveAd!.load();
+  }
+
+  void openAddBrandDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Yeni Marka Ekle'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Marka Adı'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              addBrand(controller.text.trim());
+              Navigator.pop(context);
+            },
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void openEditBrandDialog(dynamic brand) {
+    final controller = TextEditingController(text: brand['name']);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Markayı Güncelle'),
+        content: TextField(controller: controller),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              updateBrand(int.parse(brand['id'].toString()), controller.text);
+              Navigator.pop(context);
+            },
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: backButton(
-          context,
-          onTap: () {
-            Navigator.pop(context);
-          },
-        ),
-        title: Text('Select Your Vehicel', style: BoldTextStyle(size: 16)),
+        title: const Text('Marka Seç'),
         actions: [
-          inkWellWidget(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => AddBrandScreen()),
-              );
-            },
-            child: Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Icon(Icons.add),
-            ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: openAddBrandDialog,
           ),
         ],
       ),
-      body: AnimationLimiter(
-        child: ListView.builder(
-          padding: EdgeInsets.only(top: 8, bottom: 8, left: 16, right: 16),
-          shrinkWrap: true,
-          itemCount: vehicelData.length,
-          itemBuilder: (_, index) {
-            PaymentModel data = vehicelData[index];
-            return index == 4
-                ? Column(
-                    children: [
-                      if (_anchoredAdaptiveAd != null)
-                        SizedBox(
-                          height: 50,
-                          width: MediaQuery.of(context).size.width,
-                          child: AdWidget(ad: _anchoredAdaptiveAd!),
-                        ),
-                      selectVehicleWidget(index: index, data: data),
-                    ],
-                  )
-                : selectVehicleWidget(index: index, data: data);
-          },
-        ),
-      ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: AppButton(
-          text: 'Continue',
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => SelectChargerScreen()),
-            );
-          },
-        ),
-      ),
-    );
-  }
+      body: isLoading && brandList.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: () => fetchBrands(page: 1),
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16),
+                itemCount: brandList.length,
+                itemBuilder: (_, i) {
+                  final brand = brandList[i];
+                  final brandId = int.tryParse(brand['id'].toString()) ?? 0;
 
-  changeVehicle(int currentValue) {
-    currentIndex = currentValue;
-    setState(() {});
-  }
-
-  Widget selectVehicleWidget({required int index, required PaymentModel data}) {
-    return InkWell(
-      overlayColor: WidgetStatePropertyAll(Colors.transparent),
-      onTap: () {
-        changeVehicle(index);
-      },
-      child: AnimationConfiguration.staggeredList(
-        position: index,
-        duration: const Duration(milliseconds: 500),
-        child: SlideAnimation(
-          verticalOffset: MediaQuery.of(context).size.width * 0.8,
-          child: Dismissible(
-            key: Key('$index'),
-            direction: DismissDirection.endToStart,
-            background: slideLeftBackground(),
-            confirmDismiss: (direction) async {
-              if (direction == DismissDirection.endToStart) {
-                showGeneralDialog(
-                  context: context,
-                  barrierDismissible: true,
-                  barrierLabel: MaterialLocalizations.of(
-                    context,
-                  ).modalBarrierDismissLabel,
-                  pageBuilder: (ctx, a1, a2) {
-                    return Container();
-                  },
-                  transitionBuilder: (ctx, a1, a2, child) {
-                    var curve = Curves.easeInOut.transform(a1.value);
-                    return AlertDialogWidget(
-                      scale: curve,
-                      title: 'Successful Cancellation!',
-                      subTitle: 'Your booking has been successful cancelled.',
-                      onTap: () {
-                        Navigator.pop(context);
-                      },
-                    );
-                  },
-                  transitionDuration: const Duration(milliseconds: 300),
-                );
-              }
-              return true;
-            },
-            child: Container(
-              margin: EdgeInsets.only(top: 8, bottom: 8),
-              padding: EdgeInsets.all(16),
-              width: MediaQuery.of(context).size.width,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Image.asset(
-                      data.image!,
-                      fit: BoxFit.contain,
-                      height: 50,
-                      width: 40,
-                    ),
-                  ),
-                  Container(
-                    margin: EdgeInsets.only(left: 8, right: 16),
-                    height: 30,
-                    width: 1,
-                    color: Colors.grey.withOpacity(0.5),
-                  ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(data.title ?? '', style: BoldTextStyle()),
-                        SizedBox(height: 8),
-                        Text(data.subTitle ?? '', style: SecondaryTextStyle()),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: primaryColor),
-                    ),
-                    child: Container(
-                      padding: EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: currentIndex == index
-                            ? primaryColor
-                            : Colors.transparent,
-                        border: Border.all(
-                          color: currentIndex == index
-                              ? primaryColor
-                              : Colors.transparent,
-                        ),
+                  return InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SelectModelScreen(brandId: brandId),
                       ),
                     ),
-                  ),
-                ],
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.directions_car, color: Colors.green),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              brand['name'] ?? '',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy, color: Colors.blue),
+                            onPressed: () => duplicateBrand(brand['name']),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.orange),
+                            onPressed: () => openEditBrandDialog(brand),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () =>
+                                deleteBrand(int.parse(brand['id'].toString())),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-          ),
-        ),
-      ),
     );
   }
-}
-
-Widget slideLeftBackground() {
-  return Container(
-    decoration: BoxDecoration(
-      color: Colors.grey.withOpacity(0.5),
-      borderRadius: BorderRadius.circular(defaultRadius),
-    ),
-    child: Container(
-      decoration: BoxDecoration(
-        color: primaryColor.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(defaultRadius),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: <Widget>[
-          Icon(Icons.delete, color: Colors.white),
-          Text(
-            " Delete",
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-            textAlign: TextAlign.right,
-          ),
-          SizedBox(width: 20),
-        ],
-      ),
-    ),
-  );
 }
