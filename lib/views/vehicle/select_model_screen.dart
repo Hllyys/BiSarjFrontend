@@ -43,7 +43,7 @@ class _SelectModelScreenState extends State<SelectModelScreen> {
       } else {
         final docs = result.data?['CarModels']?['docs'] ?? [];
 
-        //  Markaya göre filtreleme Flutter tarafında
+        // Markaya göre filtreleme
         final filtered = docs.where((m) {
           final brand = m['brand'];
           return brand != null && brand['id'] == widget.brandId;
@@ -58,7 +58,8 @@ class _SelectModelScreenState extends State<SelectModelScreen> {
     }
   }
 
-  // Yeni model ekleme
+  /*
+  // 🟢 Yeni model ekleme
   Future<void> addModel() async {
     if (nameController.text.isEmpty || yearController.text.isEmpty) {
       _showSnackBar("Lütfen model adı ve yıl giriniz", Colors.orange);
@@ -96,143 +97,7 @@ class _SelectModelScreenState extends State<SelectModelScreen> {
     }
   }
 
-  // Model güncelleme
-  Future<void> updateModel(int id, String newName, double newYear) async {
-    try {
-      final client = (await buildGraphQLClient()).value;
-
-      final result = await client.mutate(
-        MutationOptions(
-          document: gql(updateCarModelMutation),
-          variables: {
-            "id": id,
-            "name": newName,
-            "year": newYear,
-            "brand": widget.brandId,
-          },
-        ),
-      );
-
-      if (result.hasException) {
-        _showSnackBar(
-          " Güncelleme hatası: ${result.exception.toString()}",
-          Colors.red,
-        );
-        return;
-      }
-
-      _showSnackBar(" Model güncellendi", Colors.green);
-      await fetchModels();
-    } catch (e) {
-      _showSnackBar("Bir hata oluştu: $e", Colors.red);
-    }
-  }
-
-  //Model silme
-  Future<void> deleteModel(int id) async {
-    try {
-      final client = (await buildGraphQLClient()).value;
-      final result = await client.mutate(
-        MutationOptions(
-          document: gql(deleteCarModelMutation),
-          variables: {'id': id},
-        ),
-      );
-
-      if (result.hasException) {
-        _showSnackBar(
-          "Silme hatası: ${result.exception.toString()}",
-          Colors.red,
-        );
-        return;
-      }
-
-      _showSnackBar("Model silindi", Colors.green);
-      await fetchModels();
-    } catch (e) {
-      _showSnackBar("Bir hata oluştu: $e", Colors.red);
-    }
-  }
-
-  //Model kopyalama
-  Future<void> duplicateModel(
-    int id,
-    String currentName,
-    double currentYear,
-  ) async {
-    try {
-      final client = (await buildGraphQLClient()).value;
-
-      final newName =
-          "${currentName}_copy_${DateTime.now().millisecondsSinceEpoch}";
-
-      final result = await client.mutate(
-        MutationOptions(
-          document: gql(duplicateCarModelMutation),
-          variables: {
-            "id": id,
-            "data": {
-              "name": newName,
-              "year": currentYear,
-              "brand": widget.brandId,
-            },
-          },
-        ),
-      );
-
-      if (result.hasException) {
-        _showSnackBar(
-          " Kopyalama hatası: ${result.exception.toString()}",
-          Colors.red,
-        );
-        return;
-      }
-
-      _showSnackBar(" Model başarıyla kopyalandı", Colors.green);
-      await fetchModels();
-    } catch (e) {
-      _showSnackBar("Bir hata oluştu: $e", Colors.red);
-    }
-  }
-
-  ///  Tek bir modeli detaylı getir (CarModel query)
-  Future<void> fetchSingleModel(int id) async {
-    try {
-      final client = (await buildGraphQLClient()).value;
-
-      final result = await client.query(
-        QueryOptions(
-          document: gql(getCarModelsByBrandQuery),
-          variables: {'id': id},
-          fetchPolicy: FetchPolicy.networkOnly,
-        ),
-      );
-
-      if (result.hasException) {
-        _showSnackBar(
-          "Detay hatası: ${result.exception.toString()}",
-          Colors.red,
-        );
-        return;
-      }
-
-      final model = result.data?['CarModel'];
-
-      // sadece bu markaya ait model göster
-      if (model != null && model['brand']?['id'] == widget.brandId) {
-        _showSnackBar(
-          "📘 ${model['name']} (${model['year']}) — Marka: ${model['brand']['name']}",
-          Colors.blueAccent,
-        );
-      } else {
-        _showSnackBar("Bu model seçili markaya ait değil.", Colors.orange);
-      }
-    } catch (e) {
-      _showSnackBar("Bir hata oluştu: $e", Colors.red);
-    }
-  }
-
-  //Yeni model ekleme dialogu
+  // 🟢 Yeni model ekleme dialogu
   void openAddModelDialog() {
     showDialog(
       context: context,
@@ -262,8 +127,142 @@ class _SelectModelScreenState extends State<SelectModelScreen> {
       ),
     );
   }
+  */
 
-  /// Snackbar helper
+  // Güncelleme
+  Future<void> updateModel(int id, String newName, double newYear) async {
+    try {
+      final client = (await buildGraphQLClient()).value;
+
+      final result = await client.mutate(
+        MutationOptions(
+          document: gql(updateCarModelMutation),
+          variables: {
+            "id": id,
+            "name": newName,
+            "year": newYear,
+            "brand": widget.brandId,
+          },
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar(
+          "Güncelleme hatası: ${result.exception.toString()}",
+          Colors.red,
+        );
+        return;
+      }
+
+      _showSnackBar("Model güncellendi", Colors.green);
+      await fetchModels();
+    } catch (e) {
+      _showSnackBar("Bir hata oluştu: $e", Colors.red);
+    }
+  }
+
+  // Silme
+  Future<void> deleteModel(int id) async {
+    try {
+      final client = (await buildGraphQLClient()).value;
+      final result = await client.mutate(
+        MutationOptions(
+          document: gql(deleteCarModelMutation),
+          variables: {'id': id},
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar(
+          "Silme hatası: ${result.exception.toString()}",
+          Colors.red,
+        );
+        return;
+      }
+
+      _showSnackBar("Model silindi", Colors.green);
+      await fetchModels();
+    } catch (e) {
+      _showSnackBar("Bir hata oluştu: $e", Colors.red);
+    }
+  }
+
+  // Kopyalama
+  Future<void> duplicateModel(
+    int id,
+    String currentName,
+    double currentYear,
+  ) async {
+    try {
+      final client = (await buildGraphQLClient()).value;
+
+      final newName =
+          "${currentName}_copy_${DateTime.now().millisecondsSinceEpoch}";
+
+      final result = await client.mutate(
+        MutationOptions(
+          document: gql(duplicateCarModelMutation),
+          variables: {
+            "id": id,
+            "data": {
+              "name": newName,
+              "year": currentYear,
+              "brand": widget.brandId,
+            },
+          },
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar(
+          "Kopyalama hatası: ${result.exception.toString()}",
+          Colors.red,
+        );
+        return;
+      }
+
+      _showSnackBar("Model başarıyla kopyalandı", Colors.green);
+      await fetchModels();
+    } catch (e) {
+      _showSnackBar("Bir hata oluştu: $e", Colors.red);
+    }
+  }
+
+  // Tek model getir
+  Future<void> fetchSingleModel(int id) async {
+    try {
+      final client = (await buildGraphQLClient()).value;
+
+      final result = await client.query(
+        QueryOptions(
+          document: gql(getCarModelsByBrandQuery),
+          variables: {'id': id},
+          fetchPolicy: FetchPolicy.networkOnly,
+        ),
+      );
+
+      if (result.hasException) {
+        _showSnackBar(
+          "Detay hatası: ${result.exception.toString()}",
+          Colors.red,
+        );
+        return;
+      }
+
+      final model = result.data?['CarModel'];
+      if (model != null && model['brand']?['id'] == widget.brandId) {
+        _showSnackBar(
+          "📘 ${model['name']} (${model['year']}) — Marka: ${model['brand']['name']}",
+          Colors.blueAccent,
+        );
+      } else {
+        _showSnackBar("Bu model seçili markaya ait değil.", Colors.orange);
+      }
+    } catch (e) {
+      _showSnackBar("Bir hata oluştu: $e", Colors.red);
+    }
+  }
+
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -280,10 +279,13 @@ class _SelectModelScreenState extends State<SelectModelScreen> {
       appBar: AppBar(
         title: const Text('Model Seç'),
         actions: [
+          /*
+          // 🟢 Ekleme butonu da devre dışı
           IconButton(
             onPressed: openAddModelDialog,
             icon: const Icon(Icons.add_circle_outline),
           ),
+          */
         ],
       ),
       body: isLoading
